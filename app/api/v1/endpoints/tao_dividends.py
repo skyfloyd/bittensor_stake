@@ -6,9 +6,12 @@ from ....schemas.tao_dividends import (
     AllNetuidsResponse
 )
 from ....services.blockchain_service import BlockchainService
+from ....services.sentiment_service import SentimentService
+from ....services.redis_service import redis_service
 
 router = APIRouter()
 blockchain_service = BlockchainService()
+sentiment_service = SentimentService()
 
 @router.get("/", response_model=Union[TaoDividendsResponse, NetuidDividendsResponse, AllNetuidsResponse])
 async def get_dividends(
@@ -22,7 +25,7 @@ async def get_dividends(
     Parameters:
     - netuid: Optional subnet ID. If not provided, returns data for all netuids.
     - hotkey: Optional hotkey address. If not provided, returns data for all hotkeys on the specified netuid.
-    - trade: If True, triggers sentiment analysis and stake/unstake operations (not implemented yet).
+    - trade: If True, triggers sentiment analysis and stake/unstake operations.
     
     Returns:
     - If netuid is None: Returns data for all netuids (AllNetuidsResponse)
@@ -47,6 +50,36 @@ async def get_dividends(
                 status_code=500,
                 detail=f"Missing required fields in response: {', '.join(missing_fields)}"
             )
+        
+        # If trade is enabled and netuid is provided, perform sentiment analysis
+        if trade and netuid is not None:
+            try:
+                # Get sentiment analysis for the netuid
+                sentiment_result = await sentiment_service.get_twitter_sentiment(f"Bittensor netuid {netuid}")
+                
+                print(f"sentiment_result: {sentiment_result}")
+
+                if sentiment_result.get("success", False):
+                    # Calculate stake amount based on sentiment score
+                    sentiment_score = sentiment_result["sentiment_score"]
+                    stake_amount = sentiment_service.get_stake_amount(sentiment_score)
+                    
+                    # Publish stake task to Redis for background processing
+                    await redis_service.publish_stake_task(netuid, hotkey, sentiment_score)
+                    
+                    print(f"\nSentiment Analysis Results:")
+                    print(f"Netuid: {netuid}")
+                    print(f"Hotkey: {hotkey}")
+                    print(f"Sentiment Score: {sentiment_score}")
+                    print(f"Stake Amount: {stake_amount} TAO")
+                    print(f"Tweet Count: {sentiment_result['tweet_count']}")
+                    print(f"Sample Tweets: {sentiment_result['tweets'][:3]}")
+                else:
+                    print(f"\nSentiment Analysis Failed:")
+                    print(f"Error: {sentiment_result.get('error', 'Unknown error')}")
+                    
+            except Exception as e:
+                print(f"\nError in sentiment analysis: {str(e)}")
         
         # If querying all netuids
         if netuid is None:
@@ -89,7 +122,7 @@ async def get_dividends(
             dividend=result["dividend"],
             cached=result["cached"],
             timestamp=result["timestamp"],
-            stake_tx_triggered=False
+            stake_tx_triggered=trade  # Set to true if trade is enabled
         )
         
     except HTTPException:

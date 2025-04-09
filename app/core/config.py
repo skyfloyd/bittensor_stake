@@ -28,7 +28,9 @@ class Settings(BaseSettings):
     
     # External APIs
     DATURA_API_KEY: str = ""  # Must be set via environment variable
+    DATURA_API_URL: str = "https://apis.datura.ai/twitter"
     CHUTES_API_KEY: str = ""  # Must be set via environment variable
+    CHUTES_API_URL: str = "https://api.chutes.ai/v1/chat/completions"
     
     class Config:
         env_file = ".env"
