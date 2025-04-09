@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
     REDIS_DB: int = 0
+    CACHE_TTL: int = 120  # Cache time-to-live in seconds
     
     # MongoDB
     MONGODB_URL: str = "mongodb://localhost:27017"

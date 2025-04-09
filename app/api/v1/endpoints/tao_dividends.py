@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from typing import Optional
 from ....schemas.tao_dividends import TaoDividendsResponse
-from ....services.blockchain import BlockchainService
+from ....services.blockchain_service import BlockchainService
 
 router = APIRouter()
 blockchain_service = BlockchainService()
@@ -56,7 +56,7 @@ async def get_dividends(
             netuid=result["netuid"],
             hotkey=result["hotkey"],
             dividend=result["dividend"],
-            cached=False,
+            cached=result["cached"],
             stake_tx_triggered=False
         )
         
