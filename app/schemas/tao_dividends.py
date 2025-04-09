@@ -11,6 +11,16 @@ class TaoDividendsResponse(BaseModel):
     hotkey: str
     dividend: float
     cached: bool
+    timestamp: str
     stake_tx_triggered: bool
-    all_netuids_data: Optional[Dict[str, Any]] = None
-    all_hotkeys_data: Optional[List[HotkeyDividend]] = None 
+
+class NetuidDividendsResponse(BaseModel):
+    netuid: int
+    results: List[Dict[str, Any]]
+    cached: bool
+    timestamp: str
+
+class AllNetuidsResponse(BaseModel):
+    all_netuids: Dict[int, Dict[str, Any]]
+    cached: bool
+    timestamp: str 

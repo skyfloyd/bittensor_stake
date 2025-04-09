@@ -64,23 +64,54 @@ class BlockchainService:
         If hotkey is None, returns data for all hotkeys on the specified netuid.
         """
         try:
-            # Use default values if not provided
-            netuid = netuid if netuid is not None else self.default_netuid
-            hotkey = hotkey if hotkey is not None else self.default_hotkey
-
             # Try to get cached data first
             cached_data = await redis_service.get_cached_dividends(netuid, hotkey)
             if cached_data:
                 cached_data["cached"] = True
-
-                print("Cached data found: ", cached_data)
-
                 return cached_data
 
+            # If netuid is not provided, get data for all netuids
+            if netuid is None:
+                all_netuids = await self.get_all_netuids()
+                if isinstance(all_netuids, dict) and "error" in all_netuids:
+                    return all_netuids
+
+                results = []
+                for netuid in all_netuids:
+                    netuid_data = await self._get_netuid_dividends(netuid, hotkey)
+                    if "error" not in netuid_data:
+                        results.append(netuid_data)
+                
+                return {
+                    "all_netuids": results,
+                    "cached": False,
+                    "timestamp": datetime.utcnow().isoformat() + "Z"
+                }
+
+            # If hotkey is not provided, get data for all hotkeys in the netuid
+            if hotkey is None:
+                return await self._get_netuid_dividends(netuid)
+
+            # Get specific hotkey data
+            return await self._get_specific_dividend(netuid, hotkey)
+
+        except Exception as e:
+            error_msg = f"Unexpected error: {str(e)}"
+            print(f"ERROR: {error_msg}")
+            return {
+                "netuid": netuid,
+                "hotkey": hotkey,
+                "dividend": 0.0,
+                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "cached": False,
+                "error": error_msg
+            }
+
+    async def _get_netuid_dividends(self, netuid: int, hotkey: Optional[str] = None) -> Dict[str, Any]:
+        """Get dividends data for a specific netuid."""
+        try:
             async with await self._get_substrate() as substrate:
                 block_hash = await substrate.get_chain_head()
-                
-                # Query the chain for TaoDividendsPerSubnet
                 query_map = substrate.query_map(
                     "SubtensorModule",
                     "TaoDividendsPerSubnet",
@@ -105,7 +136,7 @@ class BlockchainService:
                             # Cache the result
                             await redis_service.cache_dividends(netuid, result_data, hotkey)
                             return result_data
-                    result_data = {
+                    return {
                         "netuid": netuid,
                         "hotkey": hotkey,
                         "dividend": 0.0,
@@ -113,11 +144,8 @@ class BlockchainService:
                         "cached": False,
                         "error": "No dividend data found for this hotkey"
                     }
-                    # Cache the error result too
-                    await redis_service.cache_dividends(netuid, result_data, hotkey)
-                    return result_data
                 
-                # Return all results for the netuid
+                # Return all hotkeys for the netuid
                 result_data = {
                     "netuid": netuid,
                     "results": [
@@ -128,58 +156,17 @@ class BlockchainService:
                         }
                         for k, v in results
                     ],
-                    "cached": False
+                    "cached": False,
+                    "timestamp": datetime.utcnow().isoformat() + "Z"
                 }
                 # Cache the results
                 await redis_service.cache_dividends(netuid, result_data)
                 return result_data
 
-        except ConnectionError as e:
-            error_msg = f"Connection error: {str(e)}"
-            print(f"ERROR: {error_msg}")
-            result_data = {
-                "netuid": netuid,
-                "hotkey": hotkey,
-                "dividend": 0.0,
-                "timestamp": datetime.utcnow().isoformat() + "Z",
-                "cached": False,
-                "error": error_msg
-            }
-            # Cache the error result
-            await redis_service.cache_dividends(netuid, result_data, hotkey)
-            return result_data
-        except QueryError as e:
-            error_msg = f"Query error: {str(e)}"
-            print(f"ERROR: {error_msg}")
-            result_data = {
-                "netuid": netuid,
-                "hotkey": hotkey,
-                "dividend": 0.0,
-                "timestamp": datetime.utcnow().isoformat() + "Z",
-                "cached": False,
-                "error": error_msg
-            }
-            # Cache the error result
-            await redis_service.cache_dividends(netuid, result_data, hotkey)
-            return result_data
-        except DecodingError as e:
-            error_msg = f"Decoding error: {str(e)}"
-            print(f"ERROR: {error_msg}")
-            result_data = {
-                "netuid": netuid,
-                "hotkey": hotkey,
-                "dividend": 0.0,
-                "timestamp": datetime.utcnow().isoformat() + "Z",
-                "cached": False,
-                "error": error_msg
-            }
-            # Cache the error result
-            await redis_service.cache_dividends(netuid, result_data, hotkey)
-            return result_data
         except Exception as e:
-            error_msg = f"Unexpected error: {str(e)}"
+            error_msg = f"Error getting netuid dividends: {str(e)}"
             print(f"ERROR: {error_msg}")
-            result_data = {
+            return {
                 "netuid": netuid,
                 "hotkey": hotkey,
                 "dividend": 0.0,
@@ -187,10 +174,56 @@ class BlockchainService:
                 "cached": False,
                 "error": error_msg
             }
-            # Cache the error result
-            await redis_service.cache_dividends(netuid, result_data, hotkey)
-            return result_data
 
+    async def _get_specific_dividend(self, netuid: int, hotkey: str) -> Dict[str, Any]:
+        """Get specific dividend data for a netuid and hotkey."""
+        try:
+            async with await self._get_substrate() as substrate:
+                block_hash = await substrate.get_chain_head()
+                query_map = substrate.query_map(
+                    "SubtensorModule",
+                    "TaoDividendsPerSubnet",
+                    [netuid],
+                    block_hash=block_hash
+                )
+                
+                results = await self._exhaust_query_map(query_map)
+                
+                for k, v in results:
+                    if decode_account_id(k) == hotkey:
+                        dividend_value = float(v.value) / 1e9
+                        result_data = {
+                            "netuid": netuid,
+                            "hotkey": hotkey,
+                            "dividend": dividend_value,
+                            "timestamp": datetime.utcnow().isoformat() + "Z",
+                            "cached": False
+                        }
+                        await redis_service.cache_dividends(netuid, result_data, hotkey)
+                        return result_data
+                
+                return {
+                    "netuid": netuid,
+                    "hotkey": hotkey,
+                    "dividend": 0.0,
+                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                    "cached": False,
+                    "error": "No dividend data found for this hotkey"
+                }
+
+        except Exception as e:
+            error_msg = f"Error getting specific dividend: {str(e)}"
+            print(f"ERROR: {error_msg}")
+            return {
+                "netuid": netuid,
+                "hotkey": hotkey,
+                "dividend": 0.0,
+                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "cached": False,
+                "error": error_msg
+            }
+
+    
     async def get_all_netuids(self) -> Union[List[int], Dict[str, Any]]:
         """
         Get a list of all available netuids.
