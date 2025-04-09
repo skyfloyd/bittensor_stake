@@ -62,6 +62,7 @@ pyasn1==0.4.8
 pycparser==2.22
 pycryptodome==3.22.0
 pydantic==2.11.3
+pydantic-settings==2.8.1
 pydantic_core==2.33.1
 Pygments==2.19.1
 pymongo==4.12.0

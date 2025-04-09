@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     # Security
     SECRET_KEY: str = ""  # Must be set via environment variable
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    API_TOKEN: str = ""  # Must be set via environment variable
     
     # Redis
     REDIS_HOST: str = "localhost"
