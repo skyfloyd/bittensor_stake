@@ -1,20 +1,16 @@
 import logging
 from app.core.config import get_settings
-
-print("Importing bittensor")
+# from bittensor import transfer_extrinsic, Balance
 
 # import bittensor as bt
 from bittensor_wallet.wallet import Wallet
 
-print("bittensor imported")
-
 from typing import Dict, Any, Optional
-
-
-settings = get_settings()
 
 # Configure logging
 logger = logging.getLogger(__name__)
+
+settings = get_settings()
 
 class StakeService:
     def __init__(self):
@@ -33,6 +29,11 @@ class StakeService:
             from bittensor import AsyncSubtensor
             self.subtensor = AsyncSubtensor(network="test")
         return self.subtensor
+
+    def _get_balance(self, amount: float):
+        """Lazy load Balance class and convert amount to Balance."""
+        from bittensor import Balance
+        return Balance.from_tao(amount)
 
     async def initialize_wallet(self) -> None:
         """Initialize the wallet using the testnet mnemonic."""
@@ -57,15 +58,17 @@ class StakeService:
 
             subtensor = self._get_subtensor()
             balance = await subtensor.get_balance(self.wallet.coldkeypub.ss58_address)
-            if balance < 40:  # If balance is less than 40 tao
+            if balance < self._get_balance(40):  # If balance is less than 40 tao
                 logger.info("Transferring testnet tokens...")
                 # Transfer tokens from the test wallet
-                await subtensor.transfer(
-                    wallet=self.wallet,
-                    dest=self.wallet.coldkeypub.ss58_address,
-                    amount=40,
-                    wait_for_inclusion=True
-                )
+                # await transfer_extrinsic(
+                #     subtensor=subtensor,
+                #     wallet=self.wallet,
+                #     destination=self.wallet.coldkeypub.ss58_address,
+                #     amount=self._get_balance(40),
+                #     transfer_all=False,
+                #     prompt=False
+                # )
                 logger.info("Testnet tokens transferred successfully")
         except Exception as e:
             logger.error(f"Failed to ensure testnet balance: {str(e)}")
@@ -101,7 +104,7 @@ class StakeService:
             result = await subtensor.add_stake(
                 wallet=self.wallet,
                 hotkey_ss58=hotkey,
-                amount=amount,
+                amount=self._get_balance(amount),
                 wait_for_inclusion=True
             )
 
@@ -146,7 +149,7 @@ class StakeService:
             result = await subtensor.unstake(
                 wallet=self.wallet,
                 hotkey_ss58=hotkey,
-                amount=amount,
+                amount=self._get_balance(amount),
                 wait_for_inclusion=True
             )
 
