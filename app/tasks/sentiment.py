@@ -1,6 +1,7 @@
 from typing import Dict, Any
 from asgiref.sync import async_to_sync
 from ..services.sentiment_service import SentimentService
+from ..services.mongodb_service import mongodb_service
 from ..core.celery_app import celery
 import logging
 
@@ -43,17 +44,26 @@ def analyze_sentiment_and_stake(self, netuid: int, hotkey: str) -> Dict[str, Any
             sentiment_score = sentiment_result["sentiment_score"]
             stake_amount = async_to_sync(sentiment_service.get_stake_amount)(sentiment_score)
 
-            logger.info(f"Calculated stake amount: {stake_amount}")
-            
+            logger.info(f"Calculated stake amount: {stake_amount} sentiment_score: {sentiment_score}")
+
             # Execute stake operation based on sentiment
-            logger.info("Executing stake operation...")
+            # logger.info("Executing stake operation...")
+
+            # Determine stake operation based on sentiment score
+            if sentiment_score > 0:
+                stake_operation = "add_stake"
+            elif sentiment_score < 0:
+                stake_operation = "remove_stake"
+            else:
+                stake_operation = "none"
+
             result = {
                 "success": True,
                 "netuid": netuid,
                 "hotkey": hotkey,
                 "sentiment_score": sentiment_score,
                 "stake_amount": stake_amount,
-                # "stake_operation": stake_result.get("operation", "none"),
+                "stake_operation": stake_operation,
                 # "stake_result": stake_result,
                 "tweet_count": sentiment_result["tweet_count"],
                 "sample_tweets": sentiment_result["tweets"][:3]
@@ -67,11 +77,25 @@ def analyze_sentiment_and_stake(self, netuid: int, hotkey: str) -> Dict[str, Any
                 "hotkey": hotkey,
                 "error": sentiment_result.get("error", "Unknown error")
             }
-            
+
+        # Store the result in MongoDB
+        logger.info("Storing result in MongoDB...")
+        async_to_sync(mongodb_service.create_stake_document)(result)
+
         logger.info(f"Task completed with result: {result}")
         return result
-        
+
     except Exception as e:
         logger.error(f"Task failed with error: {str(e)}", exc_info=True)
+        # Create error result
+        error_result = {
+            "success": False,
+            "netuid": netuid,
+            "hotkey": hotkey,
+            "error": str(e)
+        }
+        # Store error in MongoDB
+        async_to_sync(mongodb_service.create_stake_document)(error_result)
         # Retry the task if it fails
-        self.retry(exc=e) 
+        self.retry(exc=e)
+        return error_result
