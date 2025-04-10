@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, BackgroundTasks
 from typing import Optional, List, Dict, Any, Union
 from ....schemas.tao_dividends import (
     TaoDividendsResponse,
@@ -7,17 +7,20 @@ from ....schemas.tao_dividends import (
 )
 from ....services.blockchain_service import BlockchainService
 from ....services.sentiment_service import SentimentService
-from ....services.redis_service import redis_service
+from ....tasks.sentiment import analyze_sentiment_and_stake
+import logging
 
 router = APIRouter()
 blockchain_service = BlockchainService()
 sentiment_service = SentimentService()
+logger = logging.getLogger(__name__)
 
 @router.get("/", response_model=Union[TaoDividendsResponse, NetuidDividendsResponse, AllNetuidsResponse])
 async def get_dividends(
     netuid: Optional[int] = None,
     hotkey: Optional[str] = None,
     trade: bool = False,
+    background_tasks: BackgroundTasks = None
 ):
     """
     Get Tao dividends for a given subnet and hotkey.
@@ -51,35 +54,25 @@ async def get_dividends(
                 detail=f"Missing required fields in response: {', '.join(missing_fields)}"
             )
         
-        # If trade is enabled and netuid is provided, perform sentiment analysis
-        if trade and netuid is not None:
+        # If trade is enabled and netuid is provided, trigger Celery task
+        if trade and netuid is not None and hotkey is not None:
             try:
-                # Get sentiment analysis for the netuid
-                sentiment_result = await sentiment_service.get_twitter_sentiment(f"Bittensor netuid {netuid}")
+                # Trigger Celery task for sentiment analysis and stake operations
+                logger.info(f"Triggering sentiment analysis task for netuid={netuid}, hotkey={hotkey}")
+                task = analyze_sentiment_and_stake.delay(netuid, hotkey)
+                logger.info(f"Sentiment analysis task triggered with ID: {task.id}")
                 
-                print(f"sentiment_result: {sentiment_result}")
-
-                if sentiment_result.get("success", False):
-                    # Calculate stake amount based on sentiment score
-                    sentiment_score = sentiment_result["sentiment_score"]
-                    stake_amount = sentiment_service.get_stake_amount(sentiment_score)
-                    
-                    # Publish stake task to Redis for background processing
-                    await redis_service.publish_stake_task(netuid, hotkey, sentiment_score)
-                    
-                    print(f"\nSentiment Analysis Results:")
-                    print(f"Netuid: {netuid}")
-                    print(f"Hotkey: {hotkey}")
-                    print(f"Sentiment Score: {sentiment_score}")
-                    print(f"Stake Amount: {stake_amount} TAO")
-                    print(f"Tweet Count: {sentiment_result['tweet_count']}")
-                    print(f"Sample Tweets: {sentiment_result['tweets'][:3]}")
-                else:
-                    print(f"\nSentiment Analysis Failed:")
-                    print(f"Error: {sentiment_result.get('error', 'Unknown error')}")
-                    
+                # Add task to background tasks to track its status
+                if background_tasks:
+                    background_tasks.add_task(
+                        track_task_status,
+                        task_id=task.id,
+                        netuid=netuid,
+                        hotkey=hotkey
+                    )
             except Exception as e:
-                print(f"\nError in sentiment analysis: {str(e)}")
+                logger.error(f"Error triggering sentiment analysis task: {str(e)}")
+                # Don't raise the error, just log it and continue
         
         # If querying all netuids
         if netuid is None:
@@ -128,7 +121,21 @@ async def get_dividends(
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"Internal server error: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail=f"Internal server error: {str(e)}"
-        ) 
+        )
+
+async def track_task_status(task_id: str, netuid: int, hotkey: str):
+    """Track the status of a Celery task."""
+    try:
+        task = analyze_sentiment_and_stake.AsyncResult(task_id)
+        if task.state == 'FAILURE':
+            logger.error(f"Task {task_id} failed: {task.result}")
+        elif task.state == 'SUCCESS':
+            logger.info(f"Task {task_id} completed successfully: {task.result}")
+        else:
+            logger.info(f"Task {task_id} is in state: {task.state}")
+    except Exception as e:
+        logger.error(f"Error tracking task {task_id}: {str(e)}", exc_info=True) 

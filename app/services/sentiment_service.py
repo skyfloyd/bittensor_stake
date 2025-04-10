@@ -229,8 +229,7 @@ class SentimentService:
             sentiment_score: Sentiment score from -100 to +100
             
         Returns:
-            Stake amount in TAO
+            Stake amount in TAO (0.01 TAO * sentiment score)
         """
-        # Convert sentiment score to stake amount (0.0 to 1.0 TAO)
-        # Use absolute value since we want to stake the same amount for both positive and negative sentiment
-        return abs(sentiment_score) / 100.0 
+        # Convert sentiment score to stake amount (0.01 TAO * sentiment score)
+        return 0.01 * abs(sentiment_score) 
