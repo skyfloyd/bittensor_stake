@@ -231,14 +231,21 @@ class BlockchainService:
         try:
             async with await self._get_substrate() as substrate:
                 block_hash = await substrate.get_chain_head()
-                result = await substrate.query(
+                # Get total number of networks
+                total_networks = await substrate.query(
                     "SubtensorModule",
-                    "NetworksAdded",
+                    "TotalNetworks",
                     block_hash=block_hash
                 )
-                if result and hasattr(result, 'value'):
-                    return list(range(1, result.value + 1))
-                return []
+
+                if not total_networks or not hasattr(total_networks, 'value'):
+                    return {"error": "Could not get total networks", "netuids": []}
+                
+                # Create list of all possible netuids up to the total networks
+                netuids = list(range(int(total_networks.value)))
+
+                return netuids
+                    
         except ConnectionError as e:
             error_msg = f"Connection error: {str(e)}"
             print(f"ERROR: {error_msg}")
