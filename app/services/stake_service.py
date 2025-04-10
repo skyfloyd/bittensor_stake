@@ -74,6 +74,54 @@ class StakeService:
             logger.error(f"Failed to ensure testnet balance: {str(e)}")
             raise
 
+    async def execute_stake_operation(self, netuid: int, hotkey: str, sentiment_score: float, stake_amount: float) -> Dict[str, Any]:
+        """
+        Execute stake operation based on sentiment score.
+        
+        Args:
+            netuid: The subnet ID
+            hotkey: The hotkey address
+            sentiment_score: The sentiment score (-100 to +100)
+            stake_amount: The amount of TAO to stake/unstake
+            
+        Returns:
+            Dict containing operation results
+        """
+        try:
+            if sentiment_score > 0:
+                # Positive sentiment - add stake
+                result = await self.add_stake(netuid, hotkey, stake_amount)
+                operation = "add_stake"
+            elif sentiment_score < 0:
+                # Negative sentiment - remove stake
+                result = await self.remove_stake(netuid, hotkey, stake_amount)
+                operation = "remove_stake"
+            else:
+                # Neutral sentiment - no action
+                result = {
+                    "success": True,
+                    "operation": "none",
+                    "amount": 0.0
+                }
+                operation = "none"
+
+            return {
+                "success": True,
+                "operation": operation,
+                "amount": stake_amount,
+                "hotkey": hotkey,
+                "netuid": netuid,
+                "result": result
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to execute stake operation: {str(e)}")
+            return {
+                "success": False,
+                "operation": "none",
+                "error": str(e)
+            }
+
     async def add_stake(self, netuid: int, hotkey: str, amount: float) -> Dict[str, Any]:
         print("Adding stake netuid: ", netuid, " hotkey: ", hotkey, " amount: ", amount)
         """
