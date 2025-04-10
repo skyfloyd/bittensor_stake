@@ -25,6 +25,13 @@ class Settings(BaseSettings):
     BITTENSOR_NETWORK: str = "test"  # Use testnet for development
     DEFAULT_NETUID: int = 18
     DEFAULT_HOTKEY: str = ""
+    SUBTENSOR_URL: str = "ws://127.0.0.1:9944"  # Default to local node # wss://entrypoint-testnet.opentensor.ai:443 # wss://entrypoint-finney.opentensor.ai:443
+    
+    # Wallet Settings
+    WALLET_NAME: str = "default"
+    WALLET_HOTKEY: str = "default"
+    WALLET_PATH: str = "~/.bittensor/wallets"
+    WALLET_SEED: str = ""  # Must be set via environment variable
     
     # External APIs
     DATURA_API_KEY: str = ""  # Must be set via environment variable
