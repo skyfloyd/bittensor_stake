@@ -17,15 +17,16 @@ logger = logging.getLogger(__name__)
 
 @router.get("/", response_model=Union[TaoDividendsResponse, NetuidDividendsResponse, AllNetuidsResponse])
 async def get_dividends(
+    background_tasks: BackgroundTasks,
     netuid: Optional[int] = None,
     hotkey: Optional[str] = None,
-    trade: bool = False,
-    background_tasks: BackgroundTasks = None
+    trade: bool = False
 ):
     """
     Get Tao dividends for a given subnet and hotkey.
     
     Parameters:
+    - background_tasks: FastAPI BackgroundTasks instance for handling async tasks.
     - netuid: Optional subnet ID. If not provided, returns data for all netuids.
     - hotkey: Optional hotkey address. If not provided, returns data for all hotkeys on the specified netuid.
     - trade: If True, triggers sentiment analysis and stake/unstake operations.
@@ -55,21 +56,42 @@ async def get_dividends(
             )
         
         # If trade is enabled and netuid is provided, trigger Celery task
-        if trade and netuid is not None and hotkey is not None:
+        if trade and netuid is not None:
             try:
-                # Trigger Celery task for sentiment analysis and stake operations
-                logger.info(f"Triggering sentiment analysis task for netuid={netuid}, hotkey={hotkey}")
-                task = analyze_sentiment_and_stake.delay(netuid, hotkey)
-                logger.info(f"Sentiment analysis task triggered with ID: {task.id}")
-                
-                # Add task to background tasks to track its status
-                if background_tasks:
-                    background_tasks.add_task(
-                        track_task_status,
-                        task_id=task.id,
-                        netuid=netuid,
-                        hotkey=hotkey
-                    )
+                # If hotkey is not provided, get all hotkeys for the netuid
+                if hotkey is None:
+                    hotkeys = await blockchain_service.get_hotkeys_for_netuid(netuid)
+                    if isinstance(hotkeys, dict) and "error" in hotkeys:
+                        logger.error(f"Error getting hotkeys: {hotkeys['error']}")
+                    else:
+                        # Trigger Celery task for each hotkey
+                        for hk in hotkeys:
+                            logger.info(f"Triggering sentiment analysis task for netuid={netuid}, hotkey={hk}")
+                            task = analyze_sentiment_and_stake.delay(netuid, hk)
+                            logger.info(f"Sentiment analysis task triggered with ID: {task.id}")
+                            
+                            # Add task to background tasks to track its status
+                            if background_tasks:
+                                background_tasks.add_task(
+                                    track_task_status,
+                                    task_id=task.id,
+                                    netuid=netuid,
+                                    hotkey=hk
+                                )
+                else:
+                    # Single hotkey case
+                    logger.info(f"Triggering sentiment analysis task for netuid={netuid}, hotkey={hotkey}")
+                    task = analyze_sentiment_and_stake.delay(netuid, hotkey)
+                    logger.info(f"Sentiment analysis task triggered with ID: {task.id}")
+                    
+                    # Add task to background tasks to track its status
+                    if background_tasks:
+                        background_tasks.add_task(
+                            track_task_status,
+                            task_id=task.id,
+                            netuid=netuid,
+                            hotkey=hotkey
+                        )
             except Exception as e:
                 logger.error(f"Error triggering sentiment analysis task: {str(e)}")
                 # Don't raise the error, just log it and continue

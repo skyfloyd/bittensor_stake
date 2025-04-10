@@ -10,7 +10,15 @@ class MongoDBService:
     def __init__(self):
         self.mongodb_url = settings.MONGODB_URL
         self.db_name = settings.MONGODB_DB_NAME
-        self.client = AsyncIOMotorClient(self.mongodb_url)
+        self.client = AsyncIOMotorClient(
+            self.mongodb_url,
+            maxPoolSize=50,  # Maximum number of connections in the pool
+            minPoolSize=10,  # Minimum number of connections in the pool
+            maxIdleTimeMS=30000,  # Close idle connections after 30 seconds
+            connectTimeoutMS=5000,  # Connection timeout
+            socketTimeoutMS=5000,  # Socket timeout
+            serverSelectionTimeoutMS=5000  # Server selection timeout
+        )
         self.db = self.client[self.db_name]
         self.stake_collection = self.db["stake"]
 

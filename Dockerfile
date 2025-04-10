@@ -8,6 +8,9 @@ RUN apt-get update && apt-get install -y \
     curl \
     pkg-config \
     libssl-dev \
+    libsoup2.4-dev \
+    libgtk-3-dev \
+    libwebkit2gtk-4.0-dev \
     && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
     && export PATH="/root/.cargo/bin:$PATH" \
     && rustup default stable \

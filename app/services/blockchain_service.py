@@ -65,10 +65,11 @@ class BlockchainService:
         """
         try:
             # Try to get cached data first
-            cached_data = await redis_service.get_cached_dividends(netuid, hotkey)
-            if cached_data:
-                cached_data["cached"] = True
-                return cached_data
+            if netuid is not None:
+                cached_data = await redis_service.get_cached_dividends(netuid, hotkey)
+                if cached_data:
+                    cached_data["cached"] = True
+                    return cached_data
 
             # If netuid is not provided, get data for all netuids
             if netuid is None:
@@ -76,11 +77,15 @@ class BlockchainService:
                 if isinstance(all_netuids, dict) and "error" in all_netuids:
                     return all_netuids
 
-                results = []
-                for netuid in all_netuids:
-                    netuid_data = await self._get_netuid_dividends(netuid, hotkey)
-                    if "error" not in netuid_data:
-                        results.append(netuid_data)
+                if not isinstance(all_netuids, list):
+                    return {"error": "Invalid netuids format", "netuids": []}
+
+                results: Dict[int, Dict[str, Any]] = {}
+                for n in all_netuids:
+                    if isinstance(n, int):
+                        netuid_data = await self._get_netuid_dividends(n, hotkey)
+                        if "error" not in netuid_data:
+                            results[n] = netuid_data
                 
                 return {
                     "all_netuids": results,
@@ -227,6 +232,9 @@ class BlockchainService:
     async def get_all_netuids(self) -> Union[List[int], Dict[str, Any]]:
         """
         Get a list of all available netuids.
+        Returns either:
+        - A dictionary with error information if something went wrong
+        - A list of integers representing all available netuids
         """
         try:
             async with await self._get_substrate() as substrate:
@@ -241,10 +249,15 @@ class BlockchainService:
                 if not total_networks or not hasattr(total_networks, 'value'):
                     return {"error": "Could not get total networks", "netuids": []}
                 
-                # Create list of all possible netuids up to the total networks
-                netuids = list(range(int(total_networks.value)))
-
-                return netuids
+                try:
+                    total = int(total_networks.value)
+                    # Create list of all possible netuids up to the total networks
+                    netuids: List[int] = []
+                    for i in range(total):
+                        netuids.append(i)
+                    return netuids
+                except (ValueError, TypeError):
+                    return {"error": "Invalid total networks value", "netuids": []}
                     
         except ConnectionError as e:
             error_msg = f"Connection error: {str(e)}"
@@ -268,7 +281,7 @@ class BlockchainService:
                 block_hash = await substrate.get_chain_head()
                 query_map = substrate.query_map(
                     "SubtensorModule",
-                    "Stake",
+                    "TaoDividendsPerSubnet",
                     [netuid],
                     block_hash=block_hash
                 )

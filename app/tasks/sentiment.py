@@ -1,15 +1,25 @@
 from typing import Dict, Any
-from asgiref.sync import async_to_sync
 from ..services.sentiment_service import SentimentService
 from ..services.mongodb_service import mongodb_service
 from ..core.celery_app import celery
 import logging
+import asyncio
 
 # Initialize services
 sentiment_service = SentimentService()
 
 # Configure logging
 logger = logging.getLogger(__name__)
+
+# Helper function to run coroutines on a new event loop
+def run_async(coro):
+    loop = asyncio.new_event_loop()
+    try:
+        asyncio.set_event_loop(loop)
+        result = loop.run_until_complete(coro)
+    finally:
+        loop.close()
+    return result
 
 @celery.task(
     name='analyze_sentiment_and_stake',
@@ -35,14 +45,14 @@ def analyze_sentiment_and_stake(self, netuid: int, hotkey: str) -> Dict[str, Any
     try:
         # Get sentiment analysis for the netuid using async_to_sync
         logger.info("Getting Twitter sentiment...")
-        sentiment_result = async_to_sync(sentiment_service.get_twitter_sentiment)(f"Bittensor netuid {netuid}")
+        sentiment_result = run_async(sentiment_service.get_twitter_sentiment(f"Bittensor netuid {netuid}"))
         
         logger.info(f"Sentiment result: {sentiment_result}")
 
         if sentiment_result.get("success", False):
             # Calculate stake amount based on sentiment score
             sentiment_score = sentiment_result["sentiment_score"]
-            stake_amount = async_to_sync(sentiment_service.get_stake_amount)(sentiment_score)
+            stake_amount = run_async(sentiment_service.get_stake_amount(sentiment_score))
 
             logger.info(f"Calculated stake amount: {stake_amount} sentiment_score: {sentiment_score}")
 
@@ -80,7 +90,7 @@ def analyze_sentiment_and_stake(self, netuid: int, hotkey: str) -> Dict[str, Any
 
         # Store the result in MongoDB
         logger.info("Storing result in MongoDB...")
-        async_to_sync(mongodb_service.create_stake_document)(result)
+        run_async(mongodb_service.create_stake_document(result))
 
         logger.info(f"Task completed with result: {result}")
         return result
@@ -95,7 +105,7 @@ def analyze_sentiment_and_stake(self, netuid: int, hotkey: str) -> Dict[str, Any
             "error": str(e)
         }
         # Store error in MongoDB
-        async_to_sync(mongodb_service.create_stake_document)(error_result)
+        run_async(mongodb_service.create_stake_document(error_result))
         # Retry the task if it fails
         self.retry(exc=e)
         return error_result
