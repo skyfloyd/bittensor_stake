@@ -7,7 +7,7 @@ from ..core.config import get_settings
 settings = get_settings()
 
 class MongoDBService:
-    def __init__(self):
+    def __init_db(self):
         self.mongodb_url = settings.MONGODB_URL
         self.db_name = settings.MONGODB_DB_NAME
         self.client = AsyncIOMotorClient(
@@ -23,6 +23,7 @@ class MongoDBService:
         self.stake_collection = self.db["stake"]
 
     async def create_stake_document(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        self.__init_db()
         """
         Create a new document in the stake collection.
         
